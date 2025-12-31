@@ -1,0 +1,105 @@
+---
+title: "SP500 Momentum Features"
+subtitle: "Constructing and exploring a few features for a momentum trading signal"
+author: Mike Aguilar | https://www.linkedin.com/in/mike-aguilar-econ/ 
+format: html
+editor: visual
+toc: true
+toc-depth: 5
+toc-location: left
+embed-resources: true
+execute: 
+  warning: false
+  echo: true
+---
+
+# Background
+
+In one of the primary examples for this course we will be working with data on the SP500.
+
+Our empirical goal here is to develop several features, including 12mth-2mth momentum, to use within various ML models that will inform a trading signal.
+
+# Housekeeping
+
+```{r}
+#| echo: false
+cat("\014")  # clear console
+rm(list=ls())  # Clear the workspace
+source("PackageLoads.R") 
+```
+
+# Data Acquisition
+
+## Load simple returns
+
+Task: Load SP500-Monthly-SimpleReturns from GitHub
+
+## Set Test and Train Periods
+
+Task: Create a dataframe for the Test period which spans the beginning of the dataset to Oct2025. Call this dataframe Test.
+
+Task: Create a dataframe for the Train period which is the Nov2025 period. Call this dataframe Train.
+
+# Momentum
+
+In the following section, we'll focus on the Training period.
+
+## Construct Momentum
+
+Task: For each asset compute 12mth simple returns via compounding 1mth simple returns rolling over the entire Training period
+
+Task: For each asset compute 2mth simple returns via compounding 1mth simple returns rolling over the entire Training period
+
+Task: For each asset construct momentum rolling through time. Call this SP500-Mthly-Momentum
+
+## Scale Momentum
+
+Task: For each asset, construct the z score of the most recent momentum observation scaled by that asset's historic mean and stdev of momentum. Call this Momentum-zTimeSeries.
+
+Task: For each asset, construct the z score of the most recent momentum observations scaled by the mean and stdev of all the assets' most recent momentum. Call this Momentum-zCrossSection.
+
+# Other Features
+
+In the following section, we'll focus on the Training period.
+
+## Volatility
+
+Task: Compute the standard deviation of returns rolling over a 24mth period throughout the entire Training period
+
+Task: Compute the time series z score. Call this Volatility-zTimeseries
+
+Task: Compute the cross sectional z score. Call this Volatility-zCrossSection
+
+## Skewness
+
+Task: Compute the skewness of returns rolling over a 24mth period throughout the entire Training period
+
+Task: Compute the time series z score. Call this Skew-zTimeseries
+
+Task: Compute the cross sectional z score. Call this Skew-zCrossSection
+
+## Short Term Returns
+
+Task: Gather the most recent 1mth returns.
+
+Task: Compute the time series z score. Call this OneMthRet-zTimeSeries
+
+Task: Compute the cross sectional z score. Call this OneMthRet-zCrossSection
+
+## PeakDistance
+
+Task: Load the SP500 price series
+
+Task: For each asset compute the distance of the price relative to the most trailing 24mth max price as (P_it-max(P^24mth_it))/max(P^{24mth}\_it). Call this DistanceFromPeak
+
+Task: Compute the time series z score of the most recent observation. Call this DistanceFromPeak-zTimeSeries
+
+Task: Comptue the cross sectional z score of the most recent observation. Call this DistanceFromPeak-zCrossSection
+
+# Save
+
+Task: Gather all of the features into a dataframe called Features. This should be an NxK dataframe where N is the number of assets and K is the number of features.
+
+Task: Save Features as a csv
+
+Task: Save the R workspace

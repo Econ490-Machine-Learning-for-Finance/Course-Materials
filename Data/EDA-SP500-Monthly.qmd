@@ -1,0 +1,103 @@
+---
+title: "SP500 EDA"
+subtitle: "Exploring SP500 returns"
+author: Mike Aguilar | https://www.linkedin.com/in/mike-aguilar-econ/ 
+format: html
+editor: visual
+toc: true
+toc-depth: 5
+toc-location: left
+embed-resources: true
+execute: 
+  warning: false
+  echo: true
+---
+
+# Background
+
+In one of the primary examples for this course we will be working with data on the SP500.
+
+Our empirical goal here is to conduct some Exploratory Descriptive Analysis (EDA).
+
+# Housekeeping
+
+```{r}
+#| echo: false
+cat("\014")  # clear console
+rm(list=ls())  # Clear the workspace
+source("PackageLoads.R") 
+```
+
+# Data Acquisition
+
+## Load simple returns
+
+Task: Load SP500-Monthly-SimpleReturns from GitHub
+
+INTERNAL NOTE: can also show local CSV load
+
+## Set Test and Train Periods
+
+Task: Create a dataframe for the Test period that spans the beginning of the dataset to Oct2025. Call this dataframe Test.
+
+Task: Create a dataframe for the Train period which is the Nov2025 period. Call this dataframe Train.
+
+# EDA
+
+## Training Period
+
+Assume that all mentions of "returns" in this subsection refer to Train.
+
+### Average Returns
+
+Task: Compute mean 1mth returns for all of the assets
+
+Task: Create a relative frequency histogram with Gaussian overlay
+
+Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+### Sigma
+
+Task: Compute the Standard Deviation of returns for all the assets
+
+Task: Create a relative frequency histogram with Gaussian overlay
+
+Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+### Skew
+
+Task: Compute the Skewness of returns for all the assets
+
+Task: Create a relative frequency histogram with Gaussian overlay
+
+Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+### Kurtosis
+
+Task: Compute the Kurtosis of returns for all the assets
+
+Task: Create a relative frequency histogram with Gaussian overlay
+
+Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+## Testing Period
+
+Assume that all mentions of "returns" in this subsection refer to Test
+
+### Summarize
+
+Task: Create a histogram of returns
+
+Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+## Test / Train Similarity
+
+Task: Create a scatter plot with Test on the vertical and per-asset average return in the Train period on the horizontal.
+
+Task: Compute the correlation between Testing period return and the per-asset average return in the Training period.
+
+Task: Compute the ranks of each of the returns in the Testing period
+
+Task: Compute the ranks of each of the per-asset average returns in the Training period
+
+Task: Compute the correlation among the ranks

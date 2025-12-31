@@ -1,0 +1,289 @@
+---
+title: "Data Acquisition "
+subtitle: "Using API to pull SP500 prices"
+author: Mike Aguilar | https://www.linkedin.com/in/mike-aguilar-econ/ 
+format: html
+editor: visual
+toc: true
+toc-depth: 5
+toc-location: left
+embed-resources: true
+execute: 
+  warning: false
+  echo: true
+---
+
+# Background
+
+In one of the primary examples for this course we will be working with data on the SP500.
+
+Our empirical goal here is to use an API to pull that data and clean so that it is ready for further analysis
+
+# Housekeeping
+
+```{r}
+#| echo: false
+cat("\014")  # clear console
+rm(list=ls())  # Clear the workspace
+source("../Supporting/PackageLoads.R") 
+
+# Packages
+# install.packages(c("tidyquant","rvest","dplyr","stringr","purrr","lubridate","tibble"))
+library(tidyquant)
+library(rvest)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(dplyr)
+```
+
+# Data Acquisition
+
+## Get tickers
+
+Task: Scrape wikipedia for the list of SP500 tickers
+
+```{r}
+# -----------------------------
+# Get current S&P 500 tickers from Wikipedia
+# -----------------------------
+
+sp_url <- "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+
+sp_tbl <- read_html(sp_url) |>
+  html_elements("table.wikitable") |>
+  (\(x) x[[1]])() |>
+  html_table(fill = TRUE)
+
+# Wikipedia usually calls it "Symbol" (sometimes "Ticker symbol" in edits)
+sym_col <- intersect(names(sp_tbl), c("Symbol", "Ticker symbol"))[1]
+
+tickers_raw <- sp_tbl[[sym_col]] |> str_trim() |> unique()
+
+# Yahoo Finance convention: BRK.B -> BRK-B, BF.B -> BF-B
+tickers <- str_replace_all(tickers_raw, "\\.", "-")
+```
+
+## Get prices
+
+Task: Grab monthly adjusted closing prices for last 10yrs on the SP500 individual constituents. Use tq_get to group them all into a single dataframe. Set your last observation to November 2025.
+
+```{r}
+# -----------------------------
+# Define window: last 10 years ending Nov 2025
+# -----------------------------
+end_date   <- as.Date("2025-11-30")
+start_date <- (end_date %m-% years(10)) + days(1)  # 2015-12-01
+
+# -----------------------------
+# Pull daily prices via tq_get, then collapse to monthly frequency (can take  several minutes to run)
+# -----------------------------
+prices_monthly <- tq_get(tickers,
+                        from = start_date,
+                        to   = end_date,
+                        get  = "stock.prices") %>%
+  group_by(symbol) %>%
+  tq_transmute(
+    select      = adjusted,
+    mutate_fun  = to.monthly,
+    indexAt     = "lastof",
+    col_rename  = "adj_close"
+  ) %>%
+  ungroup() %>%
+  left_join(
+    sp_tbl %>% select(Symbol, Security),
+    by = c("symbol" = "Symbol")
+  ) %>%
+  relocate(Security, .after = symbol) %>%
+  rename(security = Security) %>%
+  mutate(date = as.Date(date))
+```
+
+# Clean
+
+## Gauge how dirty is the dataset
+
+Task: Count how many observations are not numbers
+
+```{r}
+# Count how many observations are "not numbers" in adj_close 
+# Interpreting "not numbers" as NA / NaN / Inf (and also non-numeric strings if adj_close isn't numeric)
+
+adj_num <- suppressWarnings(as.numeric(prices_monthly$adj_close))
+
+n_not_number <- sum(!is.finite(adj_num))  # NA, NaN, Inf after coercion
+n_not_number
+
+# (optional) Specifically: "non-numeric but not missing in raw"
+n_non_numeric_string <- sum(is.na(adj_num) & !is.na(prices_monthly$adj_close))
+n_non_numeric_string
+```
+
+Task: Count how many asset have missing data
+
+```{r}
+asset_missing_tbl <- prices_monthly %>%
+  mutate(adj_num = suppressWarnings(as.numeric(adj_close)),
+         is_missing = !is.finite(adj_num)) %>%
+  group_by(symbol) %>%
+  summarise(has_missing = any(is_missing), .groups = "drop")
+
+n_assets_with_missing <- sum(asset_missing_tbl$has_missing)
+n_assets_with_missing
+
+# (optional) List stocks with missing data
+assets_with_missing <- asset_missing_tbl %>%
+  filter(has_missing) %>%
+  pull(symbol)
+
+assets_with_missing
+```
+
+Task: Identify the first observation date for each asset
+
+```{r}
+first_date_by_asset <- prices_monthly %>%
+  mutate(adj_num = suppressWarnings(as.numeric(adj_close))) %>%
+  group_by(symbol) %>%
+  summarise(
+    first_date = min(date, na.rm = TRUE),
+    n_obs      = n(),
+    n_missing  = sum(!is.finite(adj_num)),
+    .groups    = "drop"
+  ) %>%
+  arrange(first_date, symbol)
+
+first_date_by_asset
+```
+
+Task: Create a histogram of the counts of the unique first observation dates
+
+```{r}
+# Count how many assets share the same first_date
+first_date_counts <- first_date_by_asset %>%
+  count(first_date, name = "n_assets")
+
+# Histogram of these counts
+ggplot(first_date_counts, aes(x = n_assets)) +
+  geom_histogram(binwidth = 1) +
+  labs(
+    x = "Number of assets sharing the same first observation date",
+    y = "Number of unique first observation dates"
+  )
+
+```
+
+```{r}
+# Time histogram
+ggplot(first_date_counts, aes(x = first_date, y = n_assets)) +
+  geom_col() +
+  labs(x = "First observation date", y = "Number of assets")
+
+```
+
+## Clean the dataset
+
+Task: Create a balanced panel by dropping any tickers that have not been trading for at least 10yrs. SP500-Mthly-Prices
+
+```{r}
+# Monthly grid
+month_grid <- tibble(date = seq.Date(from = start_date, to = end_date, by = "month"))
+T_needed   <- nrow(month_grid)   # should be 12*10 = 120
+
+# Balanced panel: drop tickers without full coverage
+SP500_Mthly_Prices <- prices_monthly %>%
+  mutate(
+    date = as.Date(date),
+    adj_close = suppressWarnings(as.numeric(adj_close))
+  ) %>%
+  filter(date >= start_date, date <= end_date) %>%
+  filter(is.finite(adj_close)) %>%                 # require valid price
+  distinct(symbol, date, .keep_all = TRUE) %>%     # ensure 1 row per (symbol,date)
+  group_by(symbol) %>%
+  filter(n_distinct(date) == T_needed) %>%         # full 120/120 months
+  ungroup() %>%
+  arrange(symbol, date)
+
+# Sanity checks
+SP500_Mthly_Prices %>%
+  count(symbol, name = "n_obs") %>%
+  count(n_obs, name = "n_symbols")
+SP500_Mthly_Prices %>% summarise(min(date), max(date)) 
+```
+
+# Engineering
+
+Task: Construct a dataframe of simple 1mth returns. SP500-Monthly-SimpleReturns\\
+
+```{r}
+# Assumes SP500_Mthly_Prices has: symbol, date, adj_close (numeric), (optional) security
+SP500_Monthly_SimpleReturns <- SP500_Mthly_Prices %>%
+  arrange(symbol, date) %>%
+  group_by(symbol) %>%
+  mutate(
+    ret_1m = adj_close / lag(adj_close) - 1
+  ) %>%
+  ungroup() %>%
+  # first month per symbol has NA return
+  filter(!is.na(ret_1m)) %>%
+  arrange(symbol, date)
+
+SP500_Monthly_SimpleReturns
+```
+
+Task: Construct a dataframe of log 1mth returns. SP500-Monthly-LogReturns
+
+```{r}
+# Assumes SP500_Mthly_Prices has: symbol, date, adj_close (numeric), (optional) security
+SP500_Monthly_LogReturns <- SP500_Mthly_Prices %>%
+  arrange(symbol, date) %>%
+  group_by(symbol) %>%
+  mutate(
+    logret_1m = log(adj_close) - log(lag(adj_close))
+  ) %>%
+  ungroup() %>%
+  filter(is.finite(logret_1m)) %>%   # drops the first month (NA) and any bad values
+  arrange(symbol, date)
+
+SP500_Monthly_LogReturns
+```
+
+# Save
+
+Task: Save the SP500-Mthly-Prices, SP500-Mthly-SimpleReturns, and SP500-Monthly-LogReturns to individual csv files
+
+```{r}
+# Choose where to save
+out_dir <- "../Data/"   # change to your folder
+dir.create(out_dir, showWarnings = FALSE)
+
+# Save each dataframe to its own CSV
+write.csv(SP500_Mthly_Prices, 
+          file.path(out_dir, "SP500-Mthly-Prices.csv"), row.names = FALSE)
+write.csv(SP500_Monthly_SimpleReturns, 
+          file.path(out_dir, "SP500-Mthly-SimpleReturns.csv"), row.names = FALSE)
+write.csv(SP500_Monthly_LogReturns,    
+          file.path(out_dir, "SP500-Monthly-LogReturns.csv"),  row.names = FALSE)
+```
+
+Task: Save SP500-Mthly-Prices, SP500-Mthly-SimpleReturns, and SP500-Monthly-LogReturns to a single R workspace
+
+```{r}
+# Save all three dataframes into a single R workspace file (.RData)
+save(
+  SP500_Mthly_Prices,
+  SP500_Monthly_SimpleReturns,
+  SP500_Monthly_LogReturns,
+  file = "../Data/SP500_Monthly_Workspace.RData"
+)
+
+# Later, to load them back:
+# load("../Data/SP500_Monthly_Workspace.RData")
+
+```

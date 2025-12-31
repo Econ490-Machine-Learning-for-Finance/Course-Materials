@@ -1,0 +1,77 @@
+---
+title: "SP500 Momentum EDA"
+subtitle: "Exploring the momentum of SP500 returns"
+author: Mike Aguilar | https://www.linkedin.com/in/mike-aguilar-econ/ 
+format: html
+editor: visual
+toc: true
+toc-depth: 5
+toc-location: left
+embed-resources: true
+execute: 
+  warning: false
+  echo: true
+---
+
+# Background
+
+In one of the primary examples for this course we will be working with data on the SP500.
+
+Our empirical goal here is to conduct Exploratory Descriptive Analysis (EDA) for the momentum of returns, which we define as 12mth minus 2mth returns.
+
+# Housekeeping
+
+```{r}
+#| echo: false
+cat("\014")  # clear console
+rm(list=ls())  # Clear the workspace
+source("PackageLoads.R") 
+```
+
+# Data Acquisition
+
+## Load simple returns
+
+Task: Load SP500-Monthly-SimpleReturns from GitHub
+
+## Set Test and Train Periods
+
+Task: Create a dataframe for the Test period which spans the beginning of the dataset to Oct2025. Call this dataframe Test.
+
+Task: Create a dataframe for the Train period which is the Nov2025 period. Call this dataframe Train.
+
+# Construct Momentum
+
+In the following section, we'll focus on the Training period.
+
+Task: For each asset compute 12mth simple returns via compounding 1mth simple returns rolling over the entire Training period
+
+Task: For each asset compute 2mth simple returns via compounding 1mth simple returns rolling over the entire Training period
+
+Task: For each asset construct momentum rolling through time. Call this SP500-Mthly-Momentum
+
+# Historic Momentum
+
+Task: Compute average momentum for each asset
+
+Task: Construct a histogram of average momentum, overlayed with a Gaussian curve
+
+Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+# Recent Momentum
+
+Task: Isolate the most recent momentum value for each asset
+
+Task: Construct a histogram of average momentum, overlayed with a Gaussian curve
+
+Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+# Connecting Momentum to Test Period returns
+
+Task: Compute correlation between average momentum and Test period returns
+
+Task: Create a scatter plot with Test period returns on the vertical and average momentum on the horizontal
+
+Task: Compute correlation between most recent momentum and Test period returns
+
+Task: Create a scatter plot with Test period returns on the vertical and most recent momentum on the horizontal
