@@ -1,0 +1,174 @@
+---
+title: "Simple Momentum Signal"
+subtitle: "Constructing and evaluating a simple momentum strategy"
+author: Mike Aguilar | https://www.linkedin.com/in/mike-aguilar-econ/ 
+format: html
+editor: visual
+toc: true
+toc-depth: 5
+toc-location: left
+embed-resources: true
+execute: 
+  warning: false
+  echo: true
+---
+
+# Housekeeping
+
+```{r}
+#| echo: false
+cat("\014")  # clear console
+rm(list=ls())  # Clear the workspace
+source("../Supporting/PackageLoads.R") 
+source("../Supporting/SignalTestingStatic_v2.R")
+
+library(tidyquant)
+library(dplyr)
+library(lubridate)
+
+```
+
+# Data Acquisition
+
+Task: Grab Monthly close prices for last 10yrs on the SP500 index and SP500 individual constituents
+
+```{r}
+# Gran index data
+end_date   <- as.Date("2025-11-30")
+start_date <- (end_date %m-% years(10)) + days(1)  # 2015-12-01
+
+SP500Index_Mthly_Prices <- tq_get("^GSPC",
+                        from = start_date,
+                        to   = end_date,
+                        get  = "stock.prices") %>%
+  group_by(symbol) %>%
+  tq_transmute(
+    select      = adjusted,
+    mutate_fun  = to.monthly,
+    indexAt     = "lastof",
+    col_rename  = "adj_close"
+  ) %>%
+  mutate(date = as.Date(date)) 
+
+SP500Index_Mthly_SimpleReturns <- SP500Index_Mthly_Prices %>%
+  arrange(symbol, date) %>%
+  group_by(symbol) %>%
+  mutate(
+    ret_1m = adj_close / lag(adj_close) - 1
+  ) %>%
+  ungroup() %>%
+  # first month per symbol has NA return
+  filter(!is.na(ret_1m)) %>%
+  arrange(symbol, date) %>%
+  mutate(symbol = dplyr::if_else(symbol == "^GSPC", "SP500", symbol)) %>%
+  select(symbol, date, ret_1m)
+
+
+SP500Index_Mthly_SimpleReturns
+```
+
+```{r}
+# Load SP500 individual constituent data from github
+raw_url = "https://raw.githubusercontent.com/Econ490-Machine-Learning-for-Finance/Course-Materials/main/Data/SP500-Mthly-SimpleReturns.csv"
+
+SP500_Mthly_SimpleReturns <- read_csv(raw_url, show_col_types = FALSE) %>%
+  mutate(date = as.Date(date)) %>%
+  select(symbol, date, ret_1m)
+
+SP500_Mthly_SimpleReturns
+```
+
+Task: Establish Test and Train (set the dates rather than making it dynamic. Train on data since inception through Oct2025. Test on Nov2025)
+
+```{r}
+# Split sample
+Train <- SP500_Mthly_SimpleReturns %>% filter(date <as.Date("2025-11-30"))
+Test <- SP500_Mthly_SimpleReturns %>% filter(date == as.Date("2025-11-30"))
+
+tail(Train)
+Test
+```
+
+# Signal Construction
+
+Task: Construct a simple momentum strategy as per class notes
+
+-   Define LongCondition = 1 if $r_{i,t-1} >\epsilon$ and 0 otherwise
+
+-   Define ShortCondition = 1 if $r_{i,t-1} <-\epsilon$ and 0 otherwise
+
+-   $s_{i,t}$ = LongCondition minus ShortCondition
+
+-   Set $\epsilon = .5\sigma$(SP500 index monthly returns)
+
+```{r}
+# Signal threshold
+SP500_HistRet <- SP500Index_Mthly_SimpleReturns %>% filter(date<as.Date("2025-11-30"))
+eps <- 0.5 * sd(SP500_HistRet$ret_1m, na.rm = TRUE)
+```
+
+```{r}
+# Lag return
+Signal_matrix <- Train %>% 
+  filter(date == as.Date("2025-10-31")) %>%
+  select(symbol, ret_1m) %>% # lag return
+  rename("signal_matrix" = "ret_1m", "ticker" = "symbol")
+
+Signal_matrix
+```
+
+```{r}
+# Construct (most recent) signal
+Signal_position <- Signal_matrix %>%
+  mutate(
+    signal_position = case_when(
+      signal_matrix >  eps ~  1L,
+      signal_matrix < -eps ~ -1L,
+      TRUE          ~  0L
+    )
+  ) %>%
+  select(ticker, signal_position)
+  
+
+Signal_position
+```
+
+# Signal Testing
+
+Task: Call out to SignTestingStatic.R to evaluate the efficacy of this signal.
+
+```{r}
+# Prepare test data
+test_ret <- Test %>% rename("returns" = "ret_1m", "ticker" = "symbol")
+
+# Parameters
+Meta <- list(
+  assetname = "SP500",
+  benchmarkname = "SP500",
+  signalname = "Momentum"
+)
+
+signal_threshold <- eps
+
+
+# Evaluate signal
+
+res <- SignalTestingStatic(
+  signal_position = Signal_position,
+  signal_matrix = Signal_matrix,
+  returns = test_ret,
+  Meta = Meta,
+  signal_threshold = signal_threshold,          # acted iff |score| > tau
+  return_threshold = 0,            # for outcome_mode="direction" it doesn't matter
+  outcome_mode = "direction",
+  return_type = "simple",
+  one_sided_hit = FALSE,
+  seed = 123,
+  output_dir = "../Output/SignalTestingStatic"
+)
+```
+
+```{r}
+# Compare results
+res
+```
