@@ -25,22 +25,62 @@ Our empirical goal here is to conduct some Exploratory Descriptive Analysis (EDA
 #| echo: false
 cat("\014")  # clear console
 rm(list=ls())  # Clear the workspace
-source("PackageLoads.R") 
+source("../Supporting/PackageLoads.R") 
+
+library(readr)
+library(dplyr)
+library(ggplot2)
 ```
 
 # Data Acquisition
 
 ## Load simple returns
 
-Task: Load SP500-Monthly-SimpleReturns from GitHub
+Task: Load SP500-Monthly-SimpleReturns from GitHub.
+
+To get the file url:
+
+1.  Go to course repo and **click the target CSV file**.
+2.  On the file page, click the **Raw** button (near the top right of the file content, next to things like *Blame* / *History*).
+3.  **Copy the URL** from your browser address bar.
+
+```{r}
+# Load data from github
+raw_url = "https://raw.githubusercontent.com/Econ490-Machine-Learning-for-Finance/Course-Materials/refs/heads/main/Data/SP500-Mthly-SimpleReturns.csv"
+
+SP500_Mthly_SimpleReturns <- read_csv(raw_url, show_col_types = FALSE) %>%
+  mutate(date = as.Date(date))
+```
 
 INTERNAL NOTE: can also show local CSV load
 
+```{r}
+# You can also load it from local csv file
+SP500_Mthly_SimpleReturns <- read.csv("../Data/SP500-Mthly-SimpleReturns.csv") %>%
+  mutate(date = as.Date(date))
+```
+
 ## Set Test and Train Periods
 
-Task: Create a dataframe for the Test period that spans the beginning of the dataset to Oct2025. Call this dataframe Test.
+Task: Create a dataframe for the Train period that spans the beginning of the dataset to Oct2025. Call this dataframe Train.
 
-Task: Create a dataframe for the Train period which is the Nov2025 period. Call this dataframe Train.
+```{r}
+Train <- SP500_Mthly_SimpleReturns %>%
+  mutate(date = as.Date(date)) %>%
+  filter(date <= as.Date("2025-10-31")) %>%   # through Oct 2025
+  arrange(symbol, date)
+tail(Train)
+```
+
+Task: Create a dataframe for the Test period which is the Nov2025 period. Call this dataframe Test.
+
+```{r}
+Test <- SP500_Mthly_SimpleReturns %>%
+  mutate(date = as.Date(date)) %>%
+  filter(date == as.Date("2025-11-30")) %>%   # through Oct 2025
+  arrange(symbol, date)
+tail(Test)
+```
 
 # EDA
 
@@ -52,33 +92,248 @@ Assume that all mentions of "returns" in this subsection refer to Train.
 
 Task: Compute mean 1mth returns for all of the assets
 
+```{r}
+# Assumes Train has columns: symbol, date, ret_1m  (from SP500_Monthly_SimpleReturns)
+Mean_1m_Returns_Train <- Train %>%
+  mutate(ret_1m = as.numeric(ret_1m)) %>%
+  group_by(symbol) %>%
+  summarise(mean_ret_1m = mean(ret_1m, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mean_ret_1m))
+
+Mean_1m_Returns_Train
+```
+
 Task: Create a relative frequency histogram with Gaussian overlay
 
+```{r}
+x <- Train$ret_1m 
+
+mu <- mean(x)
+sig <- sd(x)
+
+df <- data.frame(ret_1m = x)
+
+ggplot(df, aes(x = ret_1m)) +
+  # Histogram as density
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 50, fill = "white", color = "steelblue") +
+  # Shade the fitted Gaussian density
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                geom = "area",
+                fill = "steelblue",
+                alpha = 0.20) +
+  # Gaussian outline on top
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                linewidth = 1,
+                color = "steelblue") +
+  labs(x = "1-month simple return", y = "Density")
+```
+
 Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+```{r}
+ret_stats <- tibble(
+  mean  = mean(x, na.rm = TRUE),
+  sigma = sd(x, na.rm = TRUE),
+  skew  = moments::skewness(x, na.rm = TRUE),
+  kurt  = moments::kurtosis(x, na.rm = TRUE),
+  min   = min(x, na.rm = TRUE),
+  q_01  = unname(quantile(x, 0.01, na.rm = TRUE)),
+  q_10  = unname(quantile(x, 0.10, na.rm = TRUE)),
+  q_25  = unname(quantile(x, 0.25, na.rm = TRUE)),
+  q_50  = unname(quantile(x, 0.50, na.rm = TRUE)),
+  q_75  = unname(quantile(x, 0.75, na.rm = TRUE)),
+  q_90  = unname(quantile(x, 0.90, na.rm = TRUE)),
+  max   = max(x, na.rm = TRUE)
+)
+ret_stats
+```
 
 ### Sigma
 
 Task: Compute the Standard Deviation of returns for all the assets
 
+```{r}
+SD_1m_Returns_ByAsset <- Train %>%
+  mutate(ret_1m = as.numeric(ret_1m)) %>%
+  group_by(symbol) %>%
+  summarise(sd_ret_1m = sd(ret_1m, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(sd_ret_1m))
+
+SD_1m_Returns_ByAsset
+```
+
 Task: Create a relative frequency histogram with Gaussian overlay
 
+```{r}
+x <- SD_1m_Returns_ByAsset$sd_ret_1m
+
+mu <- mean(x)
+sig <- sd(x)
+
+df <- data.frame(ret_1m = x)
+
+ggplot(df, aes(x = ret_1m)) +
+  # Histogram as density
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 50, fill = "white", color = "steelblue") +
+  # Shade the fitted Gaussian density
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                geom = "area",
+                fill = "steelblue",
+                alpha = 0.20) +
+  # Gaussian outline on top
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                linewidth = 1,
+                color = "steelblue") +
+  labs(x = "Standard deviaiton of 1-month simple return", y = "Density")
+```
+
 Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+```{r}
+sd_stats <- tibble(
+  mean  = mean(x, na.rm = TRUE),
+  sigma = sd(x, na.rm = TRUE),
+  skew  = moments::skewness(x, na.rm = TRUE),
+  kurt  = moments::kurtosis(x, na.rm = TRUE),
+  min   = min(x, na.rm = TRUE),
+  q_01  = unname(quantile(x, 0.01, na.rm = TRUE)),
+  q_10  = unname(quantile(x, 0.10, na.rm = TRUE)),
+  q_25  = unname(quantile(x, 0.25, na.rm = TRUE)),
+  q_50  = unname(quantile(x, 0.50, na.rm = TRUE)),
+  q_75  = unname(quantile(x, 0.75, na.rm = TRUE)),
+  q_90  = unname(quantile(x, 0.90, na.rm = TRUE)),
+  max   = max(x, na.rm = TRUE)
+)
+sd_stats
+```
 
 ### Skew
 
 Task: Compute the Skewness of returns for all the assets
 
+```{r}
+Skew_1m_Returns_ByAsset <- Train %>%
+  group_by(symbol) %>%
+  summarise(skew_ret_1m = moments::skewness(ret_1m, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(skew_ret_1m))
+
+Skew_1m_Returns_ByAsset
+```
+
 Task: Create a relative frequency histogram with Gaussian overlay
 
+```{r}
+x <- Skew_1m_Returns_ByAsset$skew_ret_1m
+
+mu <- mean(x)
+sig <- sd(x)
+
+df <- data.frame(ret_1m = x)
+
+ggplot(df, aes(x = ret_1m)) +
+  # Histogram as density
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 50, fill = "white", color = "steelblue") +
+  # Shade the fitted Gaussian density
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                geom = "area",
+                fill = "steelblue",
+                alpha = 0.20) +
+  # Gaussian outline on top
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                linewidth = 1,
+                color = "steelblue") +
+  labs(x = "Skewness of 1-month simple return", y = "Density")
+```
+
 Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+```{r}
+skew_stats <- tibble(
+  mean  = mean(x, na.rm = TRUE),
+  sigma = sd(x, na.rm = TRUE),
+  skew  = moments::skewness(x, na.rm = TRUE),
+  kurt  = moments::kurtosis(x, na.rm = TRUE),
+  min   = min(x, na.rm = TRUE),
+  q_01  = unname(quantile(x, 0.01, na.rm = TRUE)),
+  q_10  = unname(quantile(x, 0.10, na.rm = TRUE)),
+  q_25  = unname(quantile(x, 0.25, na.rm = TRUE)),
+  q_50  = unname(quantile(x, 0.50, na.rm = TRUE)),
+  q_75  = unname(quantile(x, 0.75, na.rm = TRUE)),
+  q_90  = unname(quantile(x, 0.90, na.rm = TRUE)),
+  max   = max(x, na.rm = TRUE)
+)
+skew_stats
+```
 
 ### Kurtosis
 
 Task: Compute the Kurtosis of returns for all the assets
 
+```{r}
+Kurt_1m_Returns_ByAsset <- Train %>%
+  group_by(symbol) %>%
+  summarise(kurt_ret_1m = moments::kurtosis(ret_1m, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(kurt_ret_1m))
+
+Kurt_1m_Returns_ByAsset
+```
+
 Task: Create a relative frequency histogram with Gaussian overlay
 
+```{r}
+x <- Kurt_1m_Returns_ByAsset$kurt_ret_1m
+  
+mu <- mean(x)
+sig <- sd(x)
+
+df <- data.frame(ret_1m = x)
+
+ggplot(df, aes(x = ret_1m)) +
+  # Histogram as density
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 50, fill = "white", color = "steelblue") +
+  # Shade the fitted Gaussian density
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                geom = "area",
+                fill = "steelblue",
+                alpha = 0.20) +
+  # Gaussian outline on top
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                linewidth = 1,
+                color = "steelblue") +
+  labs(x = "Kurtosis of 1-month simple return", y = "Density")
+```
+
 Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+```{r}
+kurt_stats <- tibble(
+  mean  = mean(x, na.rm = TRUE),
+  sigma = sd(x, na.rm = TRUE),
+  skew  = moments::skewness(x, na.rm = TRUE),
+  kurt  = moments::kurtosis(x, na.rm = TRUE),
+  min   = min(x, na.rm = TRUE),
+  q_01  = unname(quantile(x, 0.01, na.rm = TRUE)),
+  q_10  = unname(quantile(x, 0.10, na.rm = TRUE)),
+  q_25  = unname(quantile(x, 0.25, na.rm = TRUE)),
+  q_50  = unname(quantile(x, 0.50, na.rm = TRUE)),
+  q_75  = unname(quantile(x, 0.75, na.rm = TRUE)),
+  q_90  = unname(quantile(x, 0.90, na.rm = TRUE)),
+  max   = max(x, na.rm = TRUE)
+)
+kurt_stats
+```
 
 ## Testing Period
 
@@ -88,16 +343,125 @@ Assume that all mentions of "returns" in this subsection refer to Test
 
 Task: Create a histogram of returns
 
+```{r}
+x <- Test$ret_1m 
+
+mu <- mean(x)
+sig <- sd(x)
+
+df <- data.frame(ret_1m = x)
+
+ggplot(df, aes(x = ret_1m)) +
+  # Histogram as density
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 50, fill = "white", color = "steelblue") +
+  # Shade the fitted Gaussian density
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                geom = "area",
+                fill = "steelblue",
+                alpha = 0.20) +
+  # Gaussian outline on top
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                linewidth = 1,
+                color = "steelblue") +
+  labs(x = "1-month simple return (Test)", y = "Density")
+```
+
 Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+```{r}
+ret_stats_test <- tibble(
+  mean  = mean(x, na.rm = TRUE),
+  sigma = sd(x, na.rm = TRUE),
+  skew  = moments::skewness(x, na.rm = TRUE),
+  kurt  = moments::kurtosis(x, na.rm = TRUE),
+  min   = min(x, na.rm = TRUE),
+  q_01  = unname(quantile(x, 0.01, na.rm = TRUE)),
+  q_10  = unname(quantile(x, 0.10, na.rm = TRUE)),
+  q_25  = unname(quantile(x, 0.25, na.rm = TRUE)),
+  q_50  = unname(quantile(x, 0.50, na.rm = TRUE)),
+  q_75  = unname(quantile(x, 0.75, na.rm = TRUE)),
+  q_90  = unname(quantile(x, 0.90, na.rm = TRUE)),
+  max   = max(x, na.rm = TRUE)
+)
+ret_stats_test
+```
 
 ## Test / Train Similarity
 
 Task: Create a scatter plot with Test on the vertical and per-asset average return in the Train period on the horizontal.
 
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# 1) Per-asset average return in Train (x-axis)
+train_mean <- Train %>%
+  mutate(ret_1m = as.numeric(ret_1m)) %>%
+  group_by(symbol) %>%
+  summarise(train_mean_ret = mean(ret_1m, na.rm = TRUE), .groups = "drop")
+
+# 2) Per-asset return in Test (y-axis)
+test <- Test %>%
+  mutate(ret_1m = as.numeric(ret_1m)) %>%
+  group_by(symbol) %>%
+  summarise(test_ret = ret_1m, .groups = "drop")
+
+# 3) Merge + scatter
+df <- train_mean %>%
+  inner_join(test, by = "symbol")
+
+ggplot(df, aes(x = train_mean_ret, y = test_ret)) +
+  geom_point(alpha = 0.7, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  labs(
+    x = "Per-asset average 1-month return (Train)",
+    y = "Per-asset 1-month return (Test)"
+  )
+```
+
 Task: Compute the correlation between Testing period return and the per-asset average return in the Training period.
+
+```{r}
+correlation <- cor(df$train_mean_ret, df$test_ret, use = "complete.obs")
+correlation
+```
 
 Task: Compute the ranks of each of the returns in the Testing period
 
+```{r}
+# Rank each monthly return across assets within each date in the Test period
+# (1 = lowest return, larger = higher return). Use ties.method="average" by default
+test_ranked <- test %>%
+  mutate(
+    test_rank = rank(test_ret, na.last = "keep", ties.method = "average")
+   ) %>%
+  ungroup() %>%
+  arrange((test_ret))
+
+test_ranked
+```
+
 Task: Compute the ranks of each of the per-asset average returns in the Training period
 
+```{r}
+train_ranked <- train_mean %>%
+  mutate(
+    train_rank = rank(train_mean_ret, na.last = "keep", ties.method = "average")
+  ) %>%
+  arrange(train_rank)
+
+train_ranked
+```
+
 Task: Compute the correlation among the ranks
+
+```{r}
+rank_df <- train_ranked %>%
+  inner_join(test_ranked, by = "symbol") 
+
+rank_corr <- cor(rank_df$train_rank, rank_df$test_rank, use = "complete.obs", method = "pearson")
+rank_corr
+```

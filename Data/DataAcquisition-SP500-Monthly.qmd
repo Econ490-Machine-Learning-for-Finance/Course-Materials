@@ -219,7 +219,7 @@ SP500_Mthly_Prices %>% summarise(min(date), max(date))
 
 # Engineering
 
-Task: Construct a dataframe of simple 1mth returns. SP500-Monthly-SimpleReturns\\
+Task: Construct a dataframe of simple 1mth returns. SP500-Monthly-SimpleReturns
 
 ```{r}
 # Assumes SP500_Mthly_Prices has: symbol, date, adj_close (numeric), (optional) security

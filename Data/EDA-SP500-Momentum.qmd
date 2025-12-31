@@ -25,7 +25,12 @@ Our empirical goal here is to conduct Exploratory Descriptive Analysis (EDA) for
 #| echo: false
 cat("\014")  # clear console
 rm(list=ls())  # Clear the workspace
-source("PackageLoads.R") 
+source("../Supporting/PackageLoads.R") 
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(slider)
 ```
 
 # Data Acquisition
@@ -34,11 +39,35 @@ source("PackageLoads.R")
 
 Task: Load SP500-Monthly-SimpleReturns from GitHub
 
+```{r}
+# Load data from github
+raw_url = "https://raw.githubusercontent.com/Econ490-Machine-Learning-for-Finance/Course-Materials/main/Data/SP500-Mthly-SimpleReturns.csv"
+
+SP500_Mthly_SimpleReturns <- read_csv(raw_url, show_col_types = FALSE) %>%
+  mutate(date = as.Date(date))
+```
+
 ## Set Test and Train Periods
 
-Task: Create a dataframe for the Test period which spans the beginning of the dataset to Oct2025. Call this dataframe Test.
+Task: Create a dataframe for the Train period that spans the beginning of the dataset to Oct2025. Call this dataframe Train.
 
-Task: Create a dataframe for the Train period which is the Nov2025 period. Call this dataframe Train.
+```{r}
+Train <- SP500_Mthly_SimpleReturns %>%
+  mutate(date = as.Date(date)) %>%
+  filter(date <= as.Date("2025-10-31")) %>%   # through Oct 2025
+  arrange(symbol, date)
+tail(Train)
+```
+
+Task: Create a dataframe for the Test period which is the Nov2025 period. Call this dataframe Test.
+
+```{r}
+Test <- SP500_Mthly_SimpleReturns %>%
+  mutate(date = as.Date(date)) %>%
+  filter(date == as.Date("2025-11-30")) %>%   # through Oct 2025
+  arrange(symbol, date)
+tail(Test)
+```
 
 # Construct Momentum
 
@@ -46,32 +75,230 @@ In the following section, we'll focus on the Training period.
 
 Task: For each asset compute 12mth simple returns via compounding 1mth simple returns rolling over the entire Training period
 
+```{r}
+Train_12m_SimpleReturns <- Train %>%
+  arrange(symbol, date) %>%
+  group_by(symbol) %>%
+  mutate(
+    ret_12m = slide_dbl(
+      ret_1m,
+      ~ prod(1 + .x, na.rm = FALSE) - 1,
+      .before = 11,      # include current month + prior 11 = 12 months
+      .complete = TRUE   # require full 12 months
+    )
+  ) %>%
+  ungroup()
+
+Train_12m_SimpleReturns
+```
+
 Task: For each asset compute 2mth simple returns via compounding 1mth simple returns rolling over the entire Training period
 
+```{r}
+Train_2m_SimpleReturns <- Train %>%
+  arrange(symbol, date) %>%
+  group_by(symbol) %>%
+  mutate(
+    ret_2m = slide_dbl(
+      ret_1m,
+      ~ prod(1 + .x) - 1,
+      .before = 1,       # current + prior month = 2 months
+      .complete = TRUE
+    )
+  ) %>%
+  ungroup()
+
+Train_2m_SimpleReturns
+```
+
 Task: For each asset construct momentum rolling through time. Call this SP500-Mthly-Momentum
+
+```{r}
+SP500_Mthly_Momentum <- SP500_Mthly_SimpleReturns %>% 
+  arrange(symbol, date) %>%
+  group_by(symbol) %>%
+  mutate(
+    ret_12m = slide_dbl(ret_1m, ~ prod(1 + .x) - 1, .before = 11, .complete = TRUE),
+    ret_2m  = slide_dbl(ret_1m, ~ prod(1 + .x) - 1, .before = 1,  .complete = TRUE),
+    momentum = ret_12m - ret_2m
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(momentum))
+
+tail(SP500_Mthly_Momentum)
+```
 
 # Historic Momentum
 
 Task: Compute average momentum for each asset
 
+```{r}
+Avg_Momentum_ByAsset <- SP500_Mthly_Momentum %>%
+  filter(date <= as.Date("2025-10-31")) %>%   # through Oct 2025
+  mutate(momentum = as.numeric(momentum)) %>%
+  group_by(symbol) %>%
+  summarise(avg_momentum = mean(momentum, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(avg_momentum))
+
+Avg_Momentum_ByAsset
+```
+
 Task: Construct a histogram of average momentum, overlayed with a Gaussian curve
 
+```{r}
+x <- Avg_Momentum_ByAsset$avg_momentum
+
+mu <- mean(x)
+sig <- sd(x)
+
+df <- data.frame(ret_1m = x)
+
+ggplot(df, aes(x = ret_1m)) +
+  # Histogram as density
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 50, fill = "white", color = "steelblue") +
+  # Shade the fitted Gaussian density
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                geom = "area",
+                fill = "steelblue",
+                alpha = 0.20) +
+  # Gaussian outline on top
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                linewidth = 1,
+                color = "steelblue") +
+  labs(x = "average momentum", y = "Density")
+```
+
 Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+```{r}
+mom_stats <- tibble(
+  mean  = mean(x, na.rm = TRUE),
+  sigma = sd(x, na.rm = TRUE),
+  skew  = moments::skewness(x, na.rm = TRUE),
+  kurt  = moments::kurtosis(x, na.rm = TRUE),
+  min   = min(x, na.rm = TRUE),
+  q_01  = unname(quantile(x, 0.01, na.rm = TRUE)),
+  q_10  = unname(quantile(x, 0.10, na.rm = TRUE)),
+  q_25  = unname(quantile(x, 0.25, na.rm = TRUE)),
+  q_50  = unname(quantile(x, 0.50, na.rm = TRUE)),
+  q_75  = unname(quantile(x, 0.75, na.rm = TRUE)),
+  q_90  = unname(quantile(x, 0.90, na.rm = TRUE)),
+  max   = max(x, na.rm = TRUE)
+)
+mom_stats
+```
 
 # Recent Momentum
 
 Task: Isolate the most recent momentum value for each asset
 
+```{r}
+
+Avg_Momentum_Recent_ByAsset <- SP500_Mthly_Momentum %>%
+  filter(date == as.Date("2025-11-30")) %>%   # through Oct 2025
+  mutate(momentum = as.numeric(momentum)) %>%
+  group_by(symbol) %>%
+  summarise(recent_momentum = momentum, .groups = "drop") %>%
+  arrange(desc(recent_momentum))
+
+Avg_Momentum_Recent_ByAsset
+```
+
 Task: Construct a histogram of average momentum, overlayed with a Gaussian curve
 
+```{r}
+x <- Avg_Momentum_Recent_ByAsset$recent_momentum
+
+mu <- mean(x)
+sig <- sd(x)
+
+df <- data.frame(ret_1m = x)
+
+ggplot(df, aes(x = ret_1m)) +
+  # Histogram as density
+  geom_histogram(aes(y = after_stat(density)),
+                 bins = 50, fill = "white", color = "steelblue") +
+  # Shade the fitted Gaussian density
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                geom = "area",
+                fill = "steelblue",
+                alpha = 0.20) +
+  # Gaussian outline on top
+  stat_function(fun = dnorm,
+                args = list(mean = mu, sd = sig),
+                linewidth = 1,
+                color = "steelblue") +
+  labs(x = "recent momentum", y = "Density")
+```
+
 Task: Create a table of sample stats including: mean,sigma, skew, kurtosis, min, q.1, q.25, q.5, q.75, q.9, max
+
+```{r}
+mom_stats_recent <- tibble(
+  mean  = mean(x, na.rm = TRUE),
+  sigma = sd(x, na.rm = TRUE),
+  skew  = moments::skewness(x, na.rm = TRUE),
+  kurt  = moments::kurtosis(x, na.rm = TRUE),
+  min   = min(x, na.rm = TRUE),
+  q_01  = unname(quantile(x, 0.01, na.rm = TRUE)),
+  q_10  = unname(quantile(x, 0.10, na.rm = TRUE)),
+  q_25  = unname(quantile(x, 0.25, na.rm = TRUE)),
+  q_50  = unname(quantile(x, 0.50, na.rm = TRUE)),
+  q_75  = unname(quantile(x, 0.75, na.rm = TRUE)),
+  q_90  = unname(quantile(x, 0.90, na.rm = TRUE)),
+  max   = max(x, na.rm = TRUE)
+)
+mom_stats_recent
+```
 
 # Connecting Momentum to Test Period returns
 
 Task: Compute correlation between average momentum and Test period returns
 
+```{r}
+df <- Avg_Momentum_ByAsset %>%
+  inner_join(Test, by = "symbol")
+
+
+correlation <- cor(df$avg_momentum, df$ret_1m, use = "complete.obs")
+correlation
+```
+
 Task: Create a scatter plot with Test period returns on the vertical and average momentum on the horizontal
+
+```{r}
+ggplot(df, aes(x = avg_momentum, y =ret_1m)) +
+  geom_point(alpha = 0.7, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  labs(
+    x = "Per-asset average historical momentum (Train)",
+    y = "Per-asset 1-month return (Test)"
+  )
+```
 
 Task: Compute correlation between most recent momentum and Test period returns
 
+```{r}
+df <- Avg_Momentum_ByAsset %>%
+  inner_join(Avg_Momentum_Recent_ByAsset, by = "symbol")
+
+
+correlation <- cor(df$avg_momentum, df$recent_momentum, use = "complete.obs")
+correlation
+```
+
 Task: Create a scatter plot with Test period returns on the vertical and most recent momentum on the horizontal
+
+```{r}
+ggplot(df, aes(x = avg_momentum, y =recent_momentum)) +
+  geom_point(alpha = 0.7, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  labs(
+    x = "Per-asset average historical momentum (Train)",
+    y = "Per-asset recent momentum (Test)"
+  )
+```
